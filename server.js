@@ -12,8 +12,8 @@ const server = http.createServer(app);
 const corsOptions = {
     origin: [
         'https://pandurate-squatly-hae.ngrok-free.dev',
-        'https://visio-sfu-server-5.onrender.com',
-        'https://visio-peerjs-server-3.onrender.com',
+        'https://visio-sfu-server-6.onrender.com',
+        'https://visio-peerjs-server-4.onrender.com',
         'http://localhost:3000',
         'http://localhost:8000',
         'http://localhost:5173'
@@ -45,7 +45,7 @@ const participants = new Map();
 // Vérifier la santé du SFU
 async function checkSFUHealth() {
     try {
-        const sfuUrl = process.env.SFU_SERVER_URL || 'https://visiocampus-mediasoup-sfu.onrender.com';
+        const sfuUrl = process.env.SFU_SERVER_URL || 'https://visio-sfu-server-6.onrender.com';
         const response = await fetch(`${sfuUrl}/health`);
         return response.ok;
     } catch (error) {
@@ -57,7 +57,7 @@ async function checkSFUHealth() {
 // Vérifier la santé du P2P
 async function checkP2PHealth() {
     try {
-        const p2pUrl = process.env.PEERJS_SERVER_URL || 'https://visio-peerjs-server.onrender.com';
+        const p2pUrl = process.env.PEERJS_SERVER_URL || 'https://visio-peerjs-server-4.onrender.com';
         const response = await fetch(`${p2pUrl}/health`);
         return response.ok;
     } catch (error) {
@@ -154,7 +154,7 @@ app.post('/sfu-token', async (req, res) => {
             });
         }
 
-        const sfuUrl = process.env.SFU_SERVER_URL || 'https://visiocampus-mediasoup-sfu.onrender.com';
+        const sfuUrl = process.env.SFU_SERVER_URL || 'https://visio-sfu-server-6.onrender.com';
 
         // Créer la room SFU si elle n'existe pas
         const createRoomResponse = await fetch(`${sfuUrl}/rooms`, {
@@ -254,7 +254,7 @@ io.on('connection', (socket) => {
             let sfuToken = null;
             if (room.mode === 'sfu') {
                 try {
-                    const sfuUrl = process.env.SFU_SERVER_URL || 'https://visiocampus-mediasoup-sfu.onrender.com';
+                    const sfuUrl = process.env.SFU_SERVER_URL || 'https://visio-sfu-server-6.onrender.com';
                     const tokenResponse = await fetch(`${sfuUrl}/tokens`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -404,7 +404,7 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            const sfuUrl = process.env.SFU_SERVER_URL || 'https://visiocampus-mediasoup-sfu.onrender.com';
+            const sfuUrl = process.env.SFU_SERVER_URL || 'https://visio-sfu-server-6.onrender.com';
             const tokenResponse = await fetch(`${sfuUrl}/tokens`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
