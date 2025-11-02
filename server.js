@@ -12,8 +12,8 @@ const server = http.createServer(app);
 const corsOptions = {
     origin: [
         'https://pandurate-squatly-hae.ngrok-free.dev',
-        'https://visiocampus-mediasoup-sfu.onrender.com',
-        'https://visio-peerjs-server.onrender.com',
+        'https://visio-sfu-server-5.onrender.com',
+        'https://visio-peerjs-server-3.onrender.com',
         'http://localhost:3000',
         'http://localhost:8000',
         'http://localhost:5173'
