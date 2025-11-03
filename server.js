@@ -14,6 +14,7 @@ const corsOptions = {
         'https://pandurate-squatly-hae.ngrok-free.dev',
         'https://visio-sfu-server-6.onrender.com',
         'https://visio-peerjs-server-4.onrender.com',
+        'https://visiocampus-socketio-2.onrender.com',
         'http://localhost:3000',
         'http://localhost:8000',
         'http://localhost:5173'
@@ -42,53 +43,97 @@ const participants = new Map();
 
 // ==================== FONCTIONS UTILITAIRES ====================
 
-// Vérifier la santé du SFU
+// Vérifier la santé du SFU - VERSION CORRIGÉE
 async function checkSFUHealth() {
     try {
         const sfuUrl = process.env.SFU_SERVER_URL || 'https://visio-sfu-server-6.onrender.com';
-        const response = await fetch(`${sfuUrl}/health`);
-        return response.ok;
+        console.log('🔍 Vérification santé SFU:', sfuUrl);
+
+        const response = await fetch(`${sfuUrl}/health`, {
+            method: 'GET',
+            timeout: 5000
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ SFU santé:', data.status);
+        return data.status === 'ok' || data.status === 'healthy';
+
     } catch (error) {
         console.error('❌ SFU health check failed:', error.message);
         return false;
     }
 }
 
-// Vérifier la santé du P2P
+// Vérifier la santé du P2P - VERSION CORRIGÉE
 async function checkP2PHealth() {
     try {
         const p2pUrl = process.env.PEERJS_SERVER_URL || 'https://visio-peerjs-server-4.onrender.com';
-        const response = await fetch(`${p2pUrl}/health`);
-        return response.ok;
+        console.log('🔍 Vérification santé PeerJS:', p2pUrl);
+
+        // ✅ CORRECTION : Utiliser le bon endpoint (racine au lieu de /health)
+        const response = await fetch(`${p2pUrl}/`, {
+            method: 'GET',
+            timeout: 5000
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ PeerJS santé:', data.status);
+        return data.status === 'OK' || data.status === 'running';
+
     } catch (error) {
         console.error('❌ P2P health check failed:', error.message);
         return false;
     }
 }
 
-// Déterminer le mode optimal
+// Déterminer le mode optimal - VERSION AMÉLIORÉE
 async function determineOptimalMode(roomId, participantCount) {
-    const sfuAvailable = await checkSFUHealth();
-    const p2pAvailable = await checkP2PHealth();
+    try {
+        const [sfuAvailable, p2pAvailable] = await Promise.all([
+            checkSFUHealth(),
+            checkP2PHealth()
+        ]);
 
-    console.log(`🔍 Disponibilité - SFU: ${sfuAvailable}, P2P: ${p2pAvailable}`);
+        console.log(`🔍 Disponibilité - SFU: ${sfuAvailable}, P2P: ${p2pAvailable}, Participants: ${participantCount}`);
 
-    // Si SFU indisponible, forcer P2P
-    if (!sfuAvailable) {
-        console.log('🔄 SFU indisponible, fallback vers P2P');
-        return 'p2p';
-    }
+        // ✅ LOGIQUE AMÉLIORÉE
+        if (!sfuAvailable && !p2pAvailable) {
+            console.log('🚨 Aucun service disponible, forcer P2P local');
+            return 'p2p';
+        }
 
-    // Si P2P indisponible, forcer SFU
-    if (!p2pAvailable) {
-        console.log('🔄 P2P indisponible, utilisation SFU');
-        return 'sfu';
-    }
+        // Si SFU indisponible, forcer P2P
+        if (!sfuAvailable) {
+            console.log('🔄 SFU indisponible, fallback vers P2P');
+            return 'p2p';
+        }
 
-    // Logique de basculement basée sur le nombre de participants
-    if (participantCount >= 10) {
-        return 'sfu';
-    } else {
+        // Si P2P indisponible, forcer SFU
+        if (!p2pAvailable) {
+            console.log('🔄 P2P indisponible, utilisation SFU');
+            return 'sfu';
+        }
+
+        // Logique de basculement basée sur le nombre de participants
+        if (participantCount >= 10) {
+            console.log(`🎯 ${participantCount}+ participants, mode SFU optimal`);
+            return 'sfu';
+        } else {
+            console.log(`🎯 ${participantCount} participants, mode P2P optimal`);
+            return 'p2p';
+        }
+
+    } catch (error) {
+        console.error('❌ Erreur détermination mode:', error);
+        // Fallback vers P2P en cas d'erreur
         return 'p2p';
     }
 }
@@ -109,20 +154,31 @@ app.get('/', (req, res) => {
     });
 });
 
-// Health check pour Render
+// Health check pour Render - VERSION AMÉLIORÉE
 app.get('/health', async (req, res) => {
-    const sfuHealth = await checkSFUHealth();
-    const p2pHealth = await checkP2PHealth();
+    try {
+        const [sfuHealth, p2pHealth] = await Promise.all([
+            checkSFUHealth(),
+            checkP2PHealth()
+        ]);
 
-    res.json({
-        status: 'OK',
-        service: 'Socket.IO Signaling - VisioCampus',
-        timestamp: new Date().toISOString(),
-        sfu_available: sfuHealth,
-        p2p_available: p2pHealth,
-        rooms: rooms.size,
-        participants: participants.size
-    });
+        res.json({
+            status: 'OK',
+            service: 'Socket.IO Signaling - VisioCampus',
+            timestamp: new Date().toISOString(),
+            sfu_available: sfuHealth,
+            p2p_available: p2pHealth,
+            rooms: rooms.size,
+            participants: participants.size,
+            connected_sockets: io.sockets.sockets.size
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'ERROR',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
 });
 
 // Status détaillé
@@ -131,18 +187,36 @@ app.get('/status', (req, res) => {
         roomId,
         participants: room.participants.size,
         mode: room.mode,
-        createdAt: room.createdAt
+        createdAt: new Date(room.createdAt).toISOString(),
+        participantIds: Array.from(room.participants)
+    }));
+
+    const participantsData = Array.from(participants.entries()).map(([socketId, participant]) => ({
+        socketId,
+        userId: participant.userId,
+        userName: participant.userName,
+        roomId: participant.roomId,
+        joinedAt: new Date(participant.joinedAt).toISOString()
     }));
 
     res.json({
         status: 'ok',
+        server: {
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            connections: io.sockets.sockets.size
+        },
         rooms: roomsData,
-        totalParticipants: participants.size,
-        connectedSockets: io.sockets.sockets.size
+        participants: participantsData,
+        totals: {
+            rooms: rooms.size,
+            participants: participants.size,
+            connectedSockets: io.sockets.sockets.size
+        }
     });
 });
 
-// Obtenir les infos SFU pour une room
+// Obtenir les infos SFU pour une room - VERSION AMÉLIORÉE
 app.post('/sfu-token', async (req, res) => {
     try {
         const { room_id, participant_id } = req.body;
@@ -156,30 +230,51 @@ app.post('/sfu-token', async (req, res) => {
 
         const sfuUrl = process.env.SFU_SERVER_URL || 'https://visio-sfu-server-6.onrender.com';
 
+        // Vérifier d'abord que le SFU est disponible
+        const sfuHealth = await checkSFUHealth();
+        if (!sfuHealth) {
+            return res.status(503).json({
+                success: false,
+                error: 'Service SFU temporairement indisponible'
+            });
+        }
+
         // Créer la room SFU si elle n'existe pas
         const createRoomResponse = await fetch(`${sfuUrl}/rooms`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ room_id, max_participants: 50 })
+            body: JSON.stringify({
+                room_id,
+                max_participants: 50
+            })
         });
 
         if (!createRoomResponse.ok) {
-            throw new Error('Erreur création room SFU');
+            const errorText = await createRoomResponse.text();
+            throw new Error(`Erreur création room SFU: ${createRoomResponse.status} - ${errorText}`);
         }
 
         // Générer le token
         const tokenResponse = await fetch(`${sfuUrl}/tokens`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ room_id, participant_id })
+            body: JSON.stringify({
+                room_id,
+                participant_id
+            })
         });
 
         if (!tokenResponse.ok) {
-            throw new Error('Erreur génération token SFU');
+            const errorText = await tokenResponse.text();
+            throw new Error(`Erreur génération token SFU: ${tokenResponse.status} - ${errorText}`);
         }
 
         const tokenData = await tokenResponse.json();
-        res.json(tokenData);
+
+        res.json({
+            success: true,
+            ...tokenData
+        });
 
     } catch (error) {
         console.error('❌ Erreur SFU token:', error);
@@ -203,7 +298,16 @@ io.on('connection', (socket) => {
     // ========== REJOINDRE UNE ROOM ==========
     socket.on('join-room', async (data) => {
         try {
-            const { roomId, userId, userName, userRole } = data;
+            const { roomId, userId, userName, userRole = 'participant' } = data;
+
+            if (!roomId || !userId || !userName) {
+                socket.emit('error', {
+                    event: 'join-room',
+                    message: 'roomId, userId et userName sont requis'
+                });
+                return;
+            }
+
             console.log('👤 join-room:', { roomId, userId, userName, userRole, socketId: socket.id });
 
             // Rejoindre la room Socket.IO
@@ -228,6 +332,7 @@ io.on('connection', (socket) => {
                     mode: 'p2p',
                     createdAt: Date.now()
                 });
+                console.log(`🏠 Nouvelle room créée: ${roomId}`);
             }
 
             const room = rooms.get(roomId);
@@ -266,39 +371,45 @@ io.on('connection', (socket) => {
 
                     if (tokenResponse.ok) {
                         sfuToken = await tokenResponse.json();
+                        console.log('✅ Token SFU généré pour:', userId);
+                    } else {
+                        console.warn('⚠️ Impossible de générer token SFU');
                     }
                 } catch (error) {
                     console.error('❌ Erreur génération token SFU:', error);
                 }
             }
 
-            // Envoyer la liste au nouveau participant
-            socket.emit('joined-room', {
+            // Envoyer la confirmation au nouveau participant
+            socket.emit('room-joined', {
                 roomId,
                 socketId: socket.id,
                 participants: existingParticipants,
                 mode: room.mode,
                 sfuToken: sfuToken,
                 participantsCount: room.participants.size,
-                success: true
+                success: true,
+                timestamp: Date.now()
             });
 
             // Notifier les autres de l'arrivée
-            socket.to(roomId).emit('participant-joined', {
+            socket.to(roomId).emit('user-joined', {
                 socketId: socket.id,
                 userId,
                 userName,
                 userRole,
                 participantsCount: room.participants.size,
-                mode: room.mode
+                mode: room.mode,
+                timestamp: Date.now()
             });
 
             // Notifier du changement de mode si nécessaire
             if (modeChanged) {
-                io.to(roomId).emit('mode-switch', {
+                io.to(roomId).emit('mode-switched', {
                     mode: room.mode,
                     participantsCount: participantCount,
-                    reason: participantCount >= 10 ? 'trop de participants' : 'changement optimal'
+                    reason: participantCount >= 10 ? 'trop de participants' : 'changement optimal',
+                    timestamp: Date.now()
                 });
             }
 
@@ -308,7 +419,8 @@ io.on('connection', (socket) => {
             console.error('❌ Erreur join-room:', error);
             socket.emit('error', {
                 event: 'join-room',
-                message: error.message
+                message: error.message,
+                timestamp: Date.now()
             });
         }
     });
@@ -316,14 +428,17 @@ io.on('connection', (socket) => {
     // ========== OFFRE WEBRTC ==========
     socket.on('webrtc-offer', (data) => {
         try {
-            console.log('📤 Offre WebRTC:', socket.id, '→', data.targetSocketId);
+            const { to: targetSocketId, offer, roomId } = data;
+            console.log('📤 Offre WebRTC:', socket.id, '→', targetSocketId);
 
             const participant = participants.get(socket.id);
 
-            socket.to(data.targetSocketId).emit('webrtc-offer', {
-                offer: data.offer,
-                fromSocketId: socket.id,
-                participant: participant
+            socket.to(targetSocketId).emit('webrtc-offer', {
+                offer: offer,
+                from: socket.id,
+                participant: participant,
+                roomId: roomId,
+                timestamp: Date.now()
             });
         } catch (error) {
             console.error('❌ Erreur webrtc-offer:', error);
@@ -333,11 +448,14 @@ io.on('connection', (socket) => {
     // ========== RÉPONSE WEBRTC ==========
     socket.on('webrtc-answer', (data) => {
         try {
-            console.log('📥 Réponse WebRTC:', socket.id, '→', data.targetSocketId);
+            const { to: targetSocketId, answer, roomId } = data;
+            console.log('📥 Réponse WebRTC:', socket.id, '→', targetSocketId);
 
-            socket.to(data.targetSocketId).emit('webrtc-answer', {
-                answer: data.answer,
-                fromSocketId: socket.id
+            socket.to(targetSocketId).emit('webrtc-answer', {
+                answer: answer,
+                from: socket.id,
+                roomId: roomId,
+                timestamp: Date.now()
             });
         } catch (error) {
             console.error('❌ Erreur webrtc-answer:', error);
@@ -347,9 +465,13 @@ io.on('connection', (socket) => {
     // ========== CANDIDAT ICE ==========
     socket.on('ice-candidate', (data) => {
         try {
-            socket.to(data.targetSocketId).emit('ice-candidate', {
-                candidate: data.candidate,
-                fromSocketId: socket.id
+            const { to: targetSocketId, candidate, roomId } = data;
+
+            socket.to(targetSocketId).emit('ice-candidate', {
+                candidate: candidate,
+                from: socket.id,
+                roomId: roomId,
+                timestamp: Date.now()
             });
         } catch (error) {
             console.error('❌ Erreur ice-candidate:', error);
@@ -367,7 +489,8 @@ io.on('connection', (socket) => {
 
                 socket.to(participant.roomId).emit('participant-media-state', {
                     socketId: socket.id,
-                    mediaState: data
+                    mediaState: data,
+                    timestamp: Date.now()
                 });
             }
         } catch (error) {
@@ -381,12 +504,18 @@ io.on('connection', (socket) => {
             const participant = participants.get(socket.id);
 
             if (participant) {
-                io.to(participant.roomId).emit('chat-message', {
+                const messageData = {
                     ...data,
                     socketId: socket.id,
+                    userId: participant.userId,
                     userName: participant.userName,
                     timestamp: Date.now()
-                });
+                };
+
+                console.log('💬 Message chat:', messageData);
+
+                // Diffuser à tous les participants de la room
+                io.to(participant.roomId).emit('chat-message', messageData);
             }
         } catch (error) {
             console.error('❌ Erreur chat-message:', error);
@@ -400,7 +529,10 @@ io.on('connection', (socket) => {
             const participant = participants.get(socket.id);
 
             if (!participant || participant.roomId !== roomId) {
-                socket.emit('sfu-token-error', { error: 'Participant non trouvé' });
+                socket.emit('sfu-token-error', {
+                    error: 'Participant non trouvé ou mauvaise room',
+                    timestamp: Date.now()
+                });
                 return;
             }
 
@@ -408,25 +540,36 @@ io.on('connection', (socket) => {
             const tokenResponse = await fetch(`${sfuUrl}/tokens`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ room_id: roomId, participant_id: userId })
+                body: JSON.stringify({
+                    room_id: roomId,
+                    participant_id: userId
+                })
             });
 
             if (tokenResponse.ok) {
                 const tokenData = await tokenResponse.json();
-                socket.emit('sfu-token', tokenData);
+                socket.emit('sfu-token', {
+                    ...tokenData,
+                    timestamp: Date.now()
+                });
             } else {
-                throw new Error('Erreur génération token SFU');
+                throw new Error(`Erreur HTTP ${tokenResponse.status}`);
             }
 
         } catch (error) {
             console.error('❌ Erreur request-sfu-token:', error);
-            socket.emit('sfu-token-error', { error: error.message });
+            socket.emit('sfu-token-error', {
+                error: error.message,
+                timestamp: Date.now()
+            });
         }
     });
 
     // ========== QUITTER UNE ROOM ==========
-    socket.on('leave-room', () => {
+    socket.on('leave-room', (data = {}) => {
         try {
+            const { roomId, userId, userName } = data;
+            console.log('👋 Leave-room:', { socketId: socket.id, roomId, userId, userName });
             handleParticipantLeaving(socket);
         } catch (error) {
             console.error('❌ Erreur leave-room:', error);
@@ -441,7 +584,30 @@ io.on('connection', (socket) => {
 
     // ========== HEARTBEAT ==========
     socket.on('ping', () => {
-        socket.emit('pong', { timestamp: Date.now() });
+        socket.emit('pong', {
+            timestamp: Date.now(),
+            serverTime: Date.now()
+        });
+    });
+
+    // ========== STATISTIQUES ==========
+    socket.on('get-stats', () => {
+        const participant = participants.get(socket.id);
+        const room = participant ? rooms.get(participant.roomId) : null;
+
+        socket.emit('stats', {
+            socketId: socket.id,
+            room: room ? {
+                roomId: room.roomId,
+                participantsCount: room.participants.size,
+                mode: room.mode
+            } : null,
+            server: {
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                timestamp: Date.now()
+            }
+        });
     });
 });
 
@@ -450,7 +616,9 @@ function handleParticipantLeaving(socket) {
     const participant = participants.get(socket.id);
 
     if (participant) {
-        const { roomId } = participant;
+        const { roomId, userId, userName } = participant;
+
+        console.log('🧹 Nettoyage participant:', { socketId: socket.id, roomId, userId, userName });
 
         // Retirer de la room
         if (rooms.has(roomId)) {
@@ -459,12 +627,13 @@ function handleParticipantLeaving(socket) {
 
             const participantCount = room.participants.size;
 
-            // Notifier les autres
-            socket.to(roomId).emit('participant-left', {
+            // Notifier les autres participants
+            socket.to(roomId).emit('user-left', {
                 socketId: socket.id,
-                userId: participant.userId,
-                userName: participant.userName,
-                participantsCount: participantCount
+                userId: userId,
+                userName: userName,
+                participantsCount: participantCount,
+                timestamp: Date.now()
             });
 
             // Vérifier si basculement nécessaire
@@ -472,10 +641,11 @@ function handleParticipantLeaving(socket) {
                 room.mode = 'p2p';
                 console.log(`🔄 Basculement SFU → P2P pour room ${roomId} (${participantCount} participants)`);
 
-                io.to(roomId).emit('mode-switch', {
+                io.to(roomId).emit('mode-switched', {
                     mode: 'p2p',
                     participantsCount: participantCount,
-                    reason: 'peu de participants'
+                    reason: 'peu de participants',
+                    timestamp: Date.now()
                 });
             }
 
@@ -494,17 +664,30 @@ function handleParticipantLeaving(socket) {
 
 // ==================== NETTOYAGE PÉRIODIQUE ====================
 setInterval(() => {
-    let cleaned = 0;
+    let cleanedRooms = 0;
+    let cleanedParticipants = 0;
 
+    const now = Date.now();
+    const MAX_INACTIVE_TIME = 30 * 60 * 1000; // 30 minutes
+
+    // Nettoyer les rooms vides
     rooms.forEach((room, roomId) => {
-        if (room.participants.size === 0) {
+        if (room.participants.size === 0 && (now - room.createdAt > MAX_INACTIVE_TIME)) {
             rooms.delete(roomId);
-            cleaned++;
+            cleanedRooms++;
         }
     });
 
-    if (cleaned > 0) {
-        console.log(`🧹 Nettoyage: ${cleaned} rooms vides supprimées`);
+    // Nettoyer les participants orphelins
+    participants.forEach((participant, socketId) => {
+        if (!rooms.has(participant.roomId)) {
+            participants.delete(socketId);
+            cleanedParticipants++;
+        }
+    });
+
+    if (cleanedRooms > 0 || cleanedParticipants > 0) {
+        console.log(`🧹 Nettoyage: ${cleanedRooms} rooms et ${cleanedParticipants} participants supprimés`);
     }
 }, 300000); // Toutes les 5 minutes
 
@@ -535,6 +718,12 @@ server.listen(PORT, HOST, () => {
 // ==================== GESTION PROPRE DE L'ARRÊT ====================
 const gracefulShutdown = () => {
     console.log('\n🛑 Arrêt du serveur Socket.IO...');
+
+    // Notifier tous les clients
+    io.emit('server-shutdown', {
+        message: 'Le serveur va redémarrer',
+        timestamp: Date.now()
+    });
 
     // Fermer toutes les connexions
     io.close(() => {
